@@ -7,15 +7,21 @@ import {
   StyleSheet, 
   ScrollView, 
   ActivityIndicator,
-  Alert
+  Alert,
+  Animated
 } from 'react-native';
 import * as Speech from 'expo-speech';
 import { API_BASE } from '../config';
 import { getSessionId } from './utils/session';
+import { theme } from './theme';
+import Avatar from './components/Avatar';
+import HeaderGradient from './components/HeaderGradient';
+import { PERSONA_DISPLAY_NAMES } from './constants/personas';
 
 interface RoundtableReply {
   persona: string;
   text: string;
+  fadeAnim?: Animated.Value;
   meta?: {
     used?: {
       facts?: boolean;
@@ -66,16 +72,49 @@ export default function RoundtableScreen() {
       }
 
       const data: RoundtableResponse = await response.json();
-      setReplies(data.replies);
+      
+      // Add fade animations to replies
+      const repliesWithAnimation = data.replies.map((reply, index) => {
+        const fadeAnim = new Animated.Value(0);
+        return { ...reply, fadeAnim };
+      });
+      
+      setReplies(repliesWithAnimation);
+      
+      // Animate replies in with stagger effect
+      repliesWithAnimation.forEach((reply, index) => {
+        Animated.timing(reply.fadeAnim!, {
+          toValue: 1,
+          duration: 200,
+          delay: index * 100, // Stagger by 100ms per reply
+          useNativeDriver: true,
+        }).start();
+      });
     } catch (error) {
       console.error('Error starting roundtable:', error);
       Alert.alert('Error', 'Failed to start roundtable discussion. Please try again.');
       
-      // Fallback error replies
-      setReplies(defaultPersonas.map(persona => ({
-        persona,
-        text: 'Sorry, I encountered an error and cannot participate right now.'
-      })));
+      // Fallback error replies with animation
+      const errorReplies = defaultPersonas.map((persona, index) => {
+        const fadeAnim = new Animated.Value(0);
+        return {
+          persona,
+          text: 'Sorry, I encountered an error and cannot participate right now.',
+          fadeAnim
+        };
+      });
+      
+      setReplies(errorReplies);
+      
+      // Animate error replies in
+      errorReplies.forEach((reply, index) => {
+        Animated.timing(reply.fadeAnim!, {
+          toValue: 1,
+          duration: 200,
+          delay: index * 100,
+          useNativeDriver: true,
+        }).start();
+      });
     } finally {
       setLoading(false);
     }
@@ -111,13 +150,25 @@ export default function RoundtableScreen() {
   };
 
   const renderReply = (reply: RoundtableReply, index: number) => (
-    <View key={index} style={styles.replyCard}>
+    <Animated.View 
+      key={index} 
+      style={[
+        styles.replyCard,
+        {
+          opacity: reply.fadeAnim || 1, // Fallback to 1 for existing replies
+        },
+      ]}
+    >
       <View style={styles.replyHeader}>
-        <Text style={styles.personaName}>{reply.persona}</Text>
+        <View style={styles.replyHeaderLeft}>
+          <Avatar name={reply.persona} size={28} />
+          <Text style={styles.personaName}>{PERSONA_DISPLAY_NAMES[reply.persona] || reply.persona}</Text>
+        </View>
         <TouchableOpacity
           style={styles.speakerButton}
           onPress={() => handleSpeak(reply.text, index)}
           activeOpacity={0.7}
+          accessibilityLabel={speakingIndex === index ? "Stop audio playback" : "Speak reply aloud"}
         >
           <Text style={styles.speakerButtonText}>
             {speakingIndex === index ? '⏹' : '🔊'}
@@ -150,14 +201,16 @@ export default function RoundtableScreen() {
       <Text style={styles.ttsDisclaimer}>
         Audio generated with device TTS.
       </Text>
-    </View>
+    </Animated.View>
   );
 
   return (
     <View style={styles.container}>
+      <HeaderGradient />
+      
       <Text style={styles.header}>Roundtable Discussion</Text>
       <Text style={styles.subheader}>
-        Ask a question to {defaultPersonas.join(', ')}
+        Ask a question to {defaultPersonas.map(p => PERSONA_DISPLAY_NAMES[p] || p).join(', ')}
       </Text>
 
       {!hasAsked ? (
@@ -188,7 +241,7 @@ export default function RoundtableScreen() {
 
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
+              <ActivityIndicator size="large" color={theme.colors.accent} />
               <Text style={styles.loadingText}>Gathering responses...</Text>
             </View>
           ) : (
@@ -213,20 +266,21 @@ export default function RoundtableScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-    padding: 16,
+    backgroundColor: theme.colors.bg,
+    padding: theme.spacing.lg,
+    paddingTop: 50, // Account for status bar
   },
   header: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 8,
-    color: '#333',
+    marginBottom: theme.spacing.sm,
+    color: theme.colors.text,
   },
   subheader: {
     fontSize: 16,
     textAlign: 'center',
-    color: '#666',
+    color: theme.colors.subtext,
     marginBottom: 24,
   },
   inputSection: {
@@ -234,46 +288,47 @@ const styles = StyleSheet.create({
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
     padding: 16,
     fontSize: 16,
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.bg,
+    color: theme.colors.text,
     minHeight: 100,
     textAlignVertical: 'top',
     marginBottom: 16,
   },
   askButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 12,
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.radius.md,
     padding: 16,
   },
   askButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: theme.colors.border,
   },
   askButtonText: {
-    color: '#fff',
+    color: theme.colors.bg,
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   questionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.lg,
     padding: 16,
     marginBottom: 20,
     borderLeftWidth: 4,
-    borderLeftColor: '#007AFF',
+    borderLeftColor: theme.colors.accent,
   },
   questionLabel: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: theme.colors.accent,
     marginBottom: 8,
   },
   questionText: {
     fontSize: 16,
-    color: '#333',
+    color: theme.colors.text,
     lineHeight: 22,
   },
   loadingContainer: {
@@ -283,7 +338,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#666',
+    color: theme.colors.subtext,
     marginTop: 16,
   },
   repliesContainer: {
@@ -293,54 +348,56 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   replyCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.lg,
   },
   replyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: theme.spacing.sm,
+  },
+  replyHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   personaName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    flex: 1,
+    color: theme.colors.text,
+    marginLeft: theme.spacing.sm,
   },
   speakerButton: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: theme.colors.card,
     borderRadius: 16,
     width: 32,
     height: 32,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: theme.colors.border,
   },
   speakerButtonText: {
     fontSize: 14,
   },
   replyText: {
     fontSize: 16,
-    color: '#666',
+    color: theme.colors.text,
     lineHeight: 22,
   },
   resetButton: {
-    backgroundColor: '#34C759',
-    borderRadius: 12,
+    backgroundColor: theme.colors.success,
+    borderRadius: theme.radius.md,
     padding: 16,
     marginTop: 8,
   },
   resetButtonText: {
-    color: '#fff',
+    color: theme.colors.bg,
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -351,8 +408,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   badge: {
-    backgroundColor: '#E3F2FD',
-    borderRadius: 12,
+    backgroundColor: theme.colors.accentSoft,
+    borderRadius: theme.radius.sm,
     paddingHorizontal: 8,
     paddingVertical: 4,
     marginRight: 6,
@@ -360,19 +417,20 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 12,
-    color: '#1976D2',
+    color: theme.colors.accent,
     fontWeight: '500',
   },
   disclaimer: {
     fontSize: 11,
-    color: '#999',
+    color: theme.colors.subtext,
     fontStyle: 'italic',
     marginTop: 8,
   },
   ttsDisclaimer: {
     fontSize: 10,
-    color: '#bbb',
+    color: theme.colors.subtext,
     fontStyle: 'italic',
     marginTop: 2,
+    opacity: 0.7,
   },
 });
