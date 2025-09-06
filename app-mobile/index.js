@@ -1,1 +1,1 @@
-console.log('EchoRoom Expo app starter');
+import 'expo-router/entry';

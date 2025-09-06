@@ -1,0 +1,27 @@
+{
+  "name": "echoroom-mobile",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx expo start",
+    "ios": "npx expo run:ios",
+    "android": "npx expo run:android"
+  },
+  "dependencies": {
+    "expo": "~53.0.0",
+    "expo-constants": "~17.1.7",
+    "expo-router": "~5.1.5",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.5",
+    "@react-native-async-storage/async-storage": "~2.1.0",
+    "react-native-get-random-values": "~1.11.0",
+    "uuid": "~10.0.0",
+    "expo-speech": "~13.1.7"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "@types/uuid": "~10.0.0",
+    "typescript": "~5.8.3"
+  }
+}
