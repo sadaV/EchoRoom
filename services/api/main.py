@@ -5,7 +5,7 @@ from typing import Optional, List
 import json
 import os
 from pathlib import Path
-from .llm_bedrock import llm_reply
+from llm_openai import llm_reply
 
 app = FastAPI(title="EchoRoom API")
 
@@ -65,7 +65,16 @@ def chat(request: ChatReq):
         )
     
     # Generate LLM reply using persona data
-    reply_text = llm_reply(persona_data, request.message)
+    persona_name = persona_data.get("name", request.persona)
+    persona_style = persona_data.get("speakingStyle", "helpful and informative")
+    fewshot_examples = persona_data.get("fewShot", None)
+    
+    reply_text = llm_reply(
+        persona_name=persona_name,
+        persona_style=persona_style,
+        user_msg=request.message,
+        fewshot=fewshot_examples
+    )
     
     # Count tokens (words)
     token_count = len(reply_text.split())
@@ -103,7 +112,16 @@ def roundtable(request: RoundtableReq):
             continue
         
         # Generate LLM reply using persona data
-        reply_text = llm_reply(persona_data, request.message)
+        persona_name = persona_data.get("name", persona_name)
+        persona_style = persona_data.get("speakingStyle", "helpful and informative")
+        fewshot_examples = persona_data.get("fewShot", None)
+        
+        reply_text = llm_reply(
+            persona_name=persona_name,
+            persona_style=persona_style,
+            user_msg=request.message,
+            fewshot=fewshot_examples
+        )
         
         replies.append(RoundtableReply(
             persona=persona_name,
