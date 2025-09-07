@@ -391,7 +391,7 @@ def roundtable(request: RoundtableReq, http_request: Request):
             try:
                 # Build contextual message with conversation transcript
                 if transcript:
-                    contextual_message = f"User asked: {request.message}\nConversation so far:\n{transcript}\nNow respond as {persona_name}."
+                    contextual_message = f"User asked: {request.message}\nConversation so far:\n{transcript}\nNow respond as {persona_name}. Use the conversation so far to tailor your response so the response flows more like a conversation."
                 else:
                     contextual_message = f"User asked: {request.message}\nNow respond as {persona_name}."
                 

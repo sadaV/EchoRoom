@@ -28,7 +28,7 @@
     },
     "scheme": "echoroom",
     "extra": {
-      "API_BASE": "https://6gg2rzsqtv.us-east-1.awsapprunner.com"
+      "API_BASE": "https://your-app-runner-url.amazonaws.com"
     }
   }
 }
