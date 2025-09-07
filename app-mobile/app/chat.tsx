@@ -20,7 +20,7 @@ import { getSessionId } from './utils/session';
 import { theme } from './theme';
 import Avatar from './components/Avatar';
 import HeaderGradient from './components/HeaderGradient';
-import { PERSONA_DISPLAY_NAMES, PERSONA_PROMPTS } from './constants/personas';
+import { PERSONA_DISPLAY_NAMES, PERSONA_PROMPTS, PERSONA_TAGLINE } from './constants/personas';
 
 interface ChatMessage {
   id: string;
@@ -284,7 +284,10 @@ export default function ChatScreen() {
       
       <View style={styles.personaHeader}>
         <Avatar name={persona} size={36} />
-        <Text style={styles.personaHeaderText}>Chatting with {PERSONA_DISPLAY_NAMES[persona] || persona}</Text>
+        <View style={styles.personaHeaderTextContainer}>
+          <Text style={styles.personaHeaderText}>Chatting with {PERSONA_DISPLAY_NAMES[persona] || persona}</Text>
+          <Text style={styles.personaTagline}>{PERSONA_TAGLINE[String(persona)] || ""}</Text>
+        </View>
       </View>
       
       <ScrollView 
@@ -378,12 +381,23 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
+  personaHeaderTextContainer: {
+    marginLeft: theme.spacing.sm,
+    alignItems: 'center',
+  },
   personaHeaderText: {
     fontSize: 18,
     fontWeight: 'bold',
     color: theme.colors.text,
-    marginLeft: theme.spacing.sm,
     textTransform: 'capitalize',
+  },
+  personaTagline: {
+    color: theme.colors.subtext,
+    marginTop: 4,
+    marginBottom: 8,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   messagesContainer: {
     flex: 1,

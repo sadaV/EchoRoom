@@ -142,6 +142,8 @@ curl -X POST https://<APP_RUNNER_URL>/roundtable \
   }'
 ```
 
+**Note**: The `/roundtable` endpoint now creates a flowing conversation where each persona responds in sequence, building on previous responses. The first persona responds to the user's question, the second persona responds knowing what the first said, and so on. This creates natural dialogue between historical figures rather than independent responses.
+
 ## Update Mobile App Configuration
 
 After successful deployment, update your mobile app to use the live API:

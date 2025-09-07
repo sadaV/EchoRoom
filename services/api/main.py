@@ -329,10 +329,10 @@ def roundtable(request: RoundtableReq, http_request: Request):
     
     personas_dir = Path(__file__).parent / "personas"
     replies = []
+    transcript = ""  # Running conversation transcript
     
-    # Demo mode persona limit (2) or regular limit (3)
-    max_personas = 2 if PUBLIC_DEMO_MODE.lower() == "on" else 3
-    personas_to_process = request.personas[:max_personas]
+    # Limit to first 3 personas (same for demo and regular modes)
+    personas_to_process = request.personas[:3]
     
     for persona_name in personas_to_process:
         # Validate persona name
@@ -389,12 +389,18 @@ def roundtable(request: RoundtableReq, http_request: Request):
         # Generate response using LangGraph agent or fallback to direct LLM
         if LANGGRAPH_AVAILABLE:
             try:
+                # Build contextual message with conversation transcript
+                if transcript:
+                    contextual_message = f"User asked: {request.message}\nConversation so far:\n{transcript}\nNow respond as {persona_name}."
+                else:
+                    contextual_message = f"User asked: {request.message}\nNow respond as {persona_name}."
+                
                 # Use LangGraph agent - each persona gets individual session for roundtable
                 session_id = f"roundtable_{persona_name}_{hash(request.message) % 10000}"
                 result = run_turn_langgraph(
                     persona=persona_name,
                     persona_json=persona_data,
-                    message=request.message,
+                    message=contextual_message,
                     session_id=session_id
                 )
                 reply_text = result["text"]
@@ -403,6 +409,9 @@ def roundtable(request: RoundtableReq, http_request: Request):
                 # Add demo mode info to meta if applicable
                 if PUBLIC_DEMO_MODE.lower() == "on":
                     meta_info["demomode"] = True
+                
+                # Update running transcript
+                transcript += f"{persona_name}: {reply_text}\n\n"
                 
                 replies.append(RoundtableReply(
                     persona=persona_name,
@@ -425,11 +434,17 @@ def roundtable(request: RoundtableReq, http_request: Request):
             persona_style = persona_data.get("speakingStyle", "helpful and informative")
             fewshot_examples = persona_data.get("fewShot", None)
             
+            # Build contextual message with conversation transcript
+            if transcript:
+                contextual_message = f"User asked: {request.message}\nConversation so far:\n{transcript}\nNow respond as {persona_name}."
+            else:
+                contextual_message = f"User asked: {request.message}\nNow respond as {persona_name}."
+            
             try:
                 llm_result = llm_reply(
                     persona_name=actual_persona_name,
                     persona_style=persona_style,
-                    user_msg=request.message,
+                    user_msg=contextual_message,
                     fewshot=fewshot_examples
                 )
                 reply_text = llm_result["text"]
@@ -451,6 +466,9 @@ def roundtable(request: RoundtableReq, http_request: Request):
                 # Add demo mode info to meta if applicable
                 if PUBLIC_DEMO_MODE.lower() == "on":
                     meta_info["demomode"] = True
+                
+                # Update running transcript
+                transcript += f"{persona_name}: {reply_text}\n\n"
                 
                 replies.append(RoundtableReply(
                     persona=persona_name,

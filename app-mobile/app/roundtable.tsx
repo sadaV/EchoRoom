@@ -5,7 +5,7 @@ import {
   TextInput, 
   TouchableOpacity, 
   StyleSheet, 
-  ScrollView, 
+  FlatList, 
   ActivityIndicator,
   Alert,
   Animated
@@ -149,58 +149,55 @@ export default function RoundtableScreen() {
     });
   };
 
-  const renderReply = (reply: RoundtableReply, index: number) => (
-    <Animated.View 
-      key={index} 
+  const renderConversationItem = ({ item, index }: { item: RoundtableReply, index: number }) => (
+    <Animated.View
       style={[
-        styles.replyCard,
+        styles.conversationRow,
         {
-          opacity: reply.fadeAnim || 1, // Fallback to 1 for existing replies
+          opacity: item.fadeAnim || 1, // Fallback to 1 for existing replies
         },
       ]}
     >
-      <View style={styles.replyHeader}>
-        <View style={styles.replyHeaderLeft}>
-          <Avatar name={reply.persona} size={28} />
-          <Text style={styles.personaName}>{PERSONA_DISPLAY_NAMES[reply.persona] || reply.persona}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.speakerButton}
-          onPress={() => handleSpeak(reply.text, index)}
-          activeOpacity={0.7}
-          accessibilityLabel={speakingIndex === index ? "Stop audio playback" : "Speak reply aloud"}
-        >
-          <Text style={styles.speakerButtonText}>
-            {speakingIndex === index ? '⏹' : '🔊'}
+      <View style={styles.rowContainer}>
+        <Avatar name={item.persona} size={28} />
+        <View style={styles.bubble}>
+          <View style={styles.bubbleHeader}>
+            <Text style={styles.personaName}>{PERSONA_DISPLAY_NAMES[item.persona] || item.persona}</Text>
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={() => handleSpeak(item.text, index)}
+              activeOpacity={0.7}
+              accessibilityLabel={speakingIndex === index ? "Stop audio playback" : "Speak reply aloud"}
+            >
+              <Text style={styles.speakButtonText}>
+                {speakingIndex === index ? '⏹' : '🔊 Speak'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={styles.replyText}>{item.text}</Text>
+          
+          {/* Render metadata badges */}
+          {item.meta && (
+            <View style={styles.badgeContainer}>
+              {(item.meta.used?.facts || item.meta.facts) && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>📚 Facts used</Text>
+                </View>
+              )}
+              {(item.meta.used?.quotes || item.meta.quotes) && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>📝 Snippet used</Text>
+                </View>
+              )}
+            </View>
+          )}
+          
+          <Text style={styles.disclaimer}>
+            — Fictionalized, educational response. Audio generated with device TTS.
           </Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Render metadata badges */}
-      {reply.meta && (
-        <View style={styles.badgeContainer}>
-          {(reply.meta.used?.facts || reply.meta.facts) && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>📚 Facts used</Text>
-            </View>
-          )}
-          {(reply.meta.used?.quotes || reply.meta.quotes) && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>📝 Snippet used</Text>
-            </View>
-          )}
         </View>
-      )}
-      
-      <Text style={styles.replyText}>{reply.text}</Text>
-      
-      {/* Add disclaimer */}
-      <Text style={styles.disclaimer}>
-        — Fictionalized, educational response.
-      </Text>
-      <Text style={styles.ttsDisclaimer}>
-        Audio generated with device TTS.
-      </Text>
+      </View>
     </Animated.View>
   );
 
@@ -245,8 +242,15 @@ export default function RoundtableScreen() {
               <Text style={styles.loadingText}>Gathering responses...</Text>
             </View>
           ) : (
-            <ScrollView style={styles.repliesContainer} contentContainerStyle={styles.repliesContent}>
-              {replies.map(renderReply)}
+            <>
+              <FlatList
+                data={replies}
+                renderItem={renderConversationItem}
+                keyExtractor={(item, index) => `${item.persona}-${index}`}
+                style={styles.conversationContainer}
+                contentContainerStyle={styles.conversationContent}
+                showsVerticalScrollIndicator={false}
+              />
               
               <TouchableOpacity
                 style={styles.resetButton}
@@ -255,7 +259,7 @@ export default function RoundtableScreen() {
               >
                 <Text style={styles.resetButtonText}>Ask Another Question</Text>
               </TouchableOpacity>
-            </ScrollView>
+            </>
           )}
         </>
       )}
@@ -341,54 +345,53 @@ const styles = StyleSheet.create({
     color: theme.colors.subtext,
     marginTop: 16,
   },
-  repliesContainer: {
+  conversationContainer: {
     flex: 1,
   },
-  repliesContent: {
-    paddingBottom: 20,
+  conversationContent: {
+    paddingBottom: 24,
   },
-  replyCard: {
+  conversationRow: {
+    marginBottom: theme.spacing.md,
+  },
+  rowContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  bubble: {
     backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
     borderColor: theme.colors.border,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
+    borderWidth: 1,
+    borderRadius: theme.radius.lg,
+    padding: 12,
+    flexShrink: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  replyHeader: {
+  bubbleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-  },
-  replyHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+    marginBottom: 4,
   },
   personaName: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: theme.colors.text,
-    marginLeft: theme.spacing.sm,
+    fontSize: 16,
   },
-  speakerButton: {
-    backgroundColor: theme.colors.card,
-    borderRadius: 16,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  speakButton: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
-  speakerButtonText: {
-    fontSize: 14,
+  speakButtonText: {
+    fontSize: 11,
+    color: theme.colors.accent,
   },
   replyText: {
     fontSize: 16,
@@ -430,12 +433,5 @@ const styles = StyleSheet.create({
     color: theme.colors.subtext,
     fontStyle: 'italic',
     marginTop: 8,
-  },
-  ttsDisclaimer: {
-    fontSize: 10,
-    color: theme.colors.subtext,
-    fontStyle: 'italic',
-    marginTop: 2,
-    opacity: 0.7,
   },
 });
