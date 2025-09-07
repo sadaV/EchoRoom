@@ -17,7 +17,7 @@ def llm_reply(
     user_msg: str,
     fewshot: Optional[List[Dict]] = None,
     max_tokens: int = 350
-) -> str:
+) -> Dict:
     """
     Generate a reply using OpenAI's API.
     
@@ -29,7 +29,7 @@ def llm_reply(
         max_tokens: Maximum tokens in response
         
     Returns:
-        Generated response text
+        Dict with {"text": str, "usage": {"prompt_tokens": int, "completion_tokens": int} or None}
         
     Raises:
         ValueError: If OPENAI_API_KEY is not set
@@ -84,11 +84,24 @@ def llm_reply(
             temperature=0.7
         )
         
-        # Extract and return the response text
+        # Extract response text and usage
         if response.choices and len(response.choices) > 0:
-            return response.choices[0].message.content or f"[{persona_name}] I apologize, but I couldn't generate a proper response."
+            text = response.choices[0].message.content or f"[{persona_name}] I apologize, but I couldn't generate a proper response."
+            usage = None
+            if hasattr(response, 'usage') and response.usage:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens
+                }
+            return {"text": text, "usage": usage}
         else:
-            return f"[{persona_name}] Error: No response generated."
+            return {
+                "text": f"[{persona_name}] Error: No response generated.",
+                "usage": None
+            }
             
     except Exception as e:
-        return f"[{persona_name}] Error: Unable to generate response ({str(e)}...)"
+        return {
+            "text": f"[{persona_name}] Error: Unable to generate response ({str(e)}...)",
+            "usage": None
+        }

@@ -2,12 +2,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 import json
 import os
 import time
 import logging
 import tempfile
+import threading
+import collections
+from collections import deque
+from datetime import datetime
 from pathlib import Path
 from llm_openai import llm_reply
 try:
@@ -21,6 +25,33 @@ except ImportError as e:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Environment variables for cost and abuse controls
+DAILY_TOKEN_CAP = int(os.getenv("DAILY_TOKEN_CAP", "150000"))  # tokens/day
+MIN_INTERVAL_SECONDS = float(os.getenv("MIN_INTERVAL_SECONDS", "2"))
+MAX_REQ_PER_10MIN = int(os.getenv("MAX_REQ_PER_10MIN", "10"))
+DEMO_PIN = os.getenv("DEMO_PIN")  # optional
+KILL_SWITCH = os.getenv("KILL_SWITCH", "off")  # "on"/"off"
+PUBLIC_DEMO_MODE = os.getenv("PUBLIC_DEMO_MODE", "off")  # "on"/"off"
+DISABLE_DIAG = os.getenv("DISABLE_DIAG", "off")  # "on" hides /diag endpoints
+
+# In-memory usage trackers
+def _today_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
+
+_USAGE = {"day": _today_str(), "tokens_in": 0, "tokens_out": 0, "requests": 0}
+_LAST_CALL_BY_SESSION: Dict[str, float] = {}
+_WINDOW_BY_IP: Dict[str, deque] = collections.defaultdict(lambda: deque())
+_LOCK = threading.Lock()
+
+def _roll_day():
+    """Reset usage counters if day has changed."""
+    today = _today_str()
+    if _USAGE["day"] != today:
+        _USAGE["day"] = today
+        _USAGE["tokens_in"] = 0
+        _USAGE["tokens_out"] = 0
+        _USAGE["requests"] = 0
+
 app = FastAPI(title="EchoRoom API")
 
 # CORS middleware to allow Expo app during development
@@ -32,26 +63,83 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Simple in-memory rate limiter
-rate_limiter = {}  # {session_id: last_timestamp}
-RATE_LIMIT_SECONDS = 1.5
+def _preflight_guard(request: Request, session_id: Optional[str] = None) -> str:
+    """
+    Comprehensive preflight checks for cost and abuse protection.
+    Returns the client identifier (session_id or IP).
+    Raises HTTPException if any check fails.
+    """
+    with _LOCK:
+        # Kill switch check
+        if KILL_SWITCH.lower() == "on":
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "Demo paused—please try later."}
+            )
+        
+        # Demo PIN check
+        if DEMO_PIN:
+            provided_pin = request.headers.get("x-demo-pin")
+            if not provided_pin or provided_pin != DEMO_PIN:
+                raise HTTPException(
+                    status_code=401,
+                    detail={"error": "Demo access requires valid PIN"}
+                )
+        
+        # Determine client identifier
+        client_id = session_id or (request.client.host if request.client else "anon")
+        current_time = time.time()
+        
+        # Per-session minimum interval check
+        if session_id and session_id in _LAST_CALL_BY_SESSION:
+            time_since_last = current_time - _LAST_CALL_BY_SESSION[session_id]
+            if time_since_last < MIN_INTERVAL_SECONDS:
+                raise HTTPException(
+                    status_code=429,
+                    detail={"error": f"Please wait {MIN_INTERVAL_SECONDS - time_since_last:.1f} seconds before next request"}
+                )
+        
+        # Per-IP sliding window check (10 minutes)
+        client_ip = request.client.host if request.client else "unknown"
+        ten_minutes_ago = current_time - 600  # 10 minutes
+        
+        # Clean old entries
+        while _WINDOW_BY_IP[client_ip] and _WINDOW_BY_IP[client_ip][0] < ten_minutes_ago:
+            _WINDOW_BY_IP[client_ip].popleft()
+        
+        # Check if over limit
+        if len(_WINDOW_BY_IP[client_ip]) >= MAX_REQ_PER_10MIN:
+            raise HTTPException(
+                status_code=429,
+                detail={"error": f"Too many requests. Limit: {MAX_REQ_PER_10MIN} per 10 minutes"}
+            )
+        
+        # Daily token cap check
+        _roll_day()
+        total_tokens = _USAGE["tokens_in"] + _USAGE["tokens_out"]
+        if total_tokens >= DAILY_TOKEN_CAP:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "Daily usage limit reached. Service resets at midnight UTC.",
+                    "used_tokens": total_tokens,
+                    "daily_cap": DAILY_TOKEN_CAP
+                }
+            )
+        
+        # Update tracking
+        if session_id:
+            _LAST_CALL_BY_SESSION[session_id] = current_time
+        _WINDOW_BY_IP[client_ip].append(current_time)
+        _USAGE["requests"] += 1
+        
+        return client_id
 
-def check_rate_limit(request: Request, session_id: Optional[str] = None) -> None:
-    """Check if request exceeds rate limit. Raises HTTPException(429) if rate limited."""
-    # Determine identifier: sessionId > client IP > "anon"
-    identifier = session_id or request.client.host if request.client else "anon"
-    
-    current_time = time.time()
-    last_request_time = rate_limiter.get(identifier, 0)
-    
-    if current_time - last_request_time < RATE_LIMIT_SECONDS:
-        raise HTTPException(
-            status_code=429,
-            detail={"error": "Too many requests; please wait a moment."}
-        )
-    
-    # Update last request time
-    rate_limiter[identifier] = current_time
+def _update_token_usage(prompt_tokens: int, completion_tokens: int):
+    """Safely update token usage counters."""
+    with _LOCK:
+        _USAGE["tokens_in"] += prompt_tokens
+        _USAGE["tokens_out"] += completion_tokens
 
 # Pydantic models
 class ChatReq(BaseModel):
@@ -106,8 +194,9 @@ def get_personas():
 
 @app.post("/chat", response_model=ChatResp)
 def chat(request: ChatReq, http_request: Request):
-    # Check rate limit
-    check_rate_limit(http_request, request.sessionId)
+    # Preflight guard with comprehensive checks
+    client_id = _preflight_guard(http_request, request.sessionId)
+    start_time = time.time()
     
     # Load persona JSON file
     personas_dir = Path(__file__).parent / "personas"
@@ -152,7 +241,6 @@ def chat(request: ChatReq, http_request: Request):
         )
     
     # Generate response using LangGraph agent or fallback to direct LLM
-    start_time = time.time()
     session_id = request.sessionId or "anon"
     
     if LANGGRAPH_AVAILABLE:
@@ -181,12 +269,23 @@ def chat(request: ChatReq, http_request: Request):
         fewshot_examples = persona_data.get("fewShot", None)
         
         try:
-            reply_text = llm_reply(
+            llm_result = llm_reply(
                 persona_name=persona_name,
                 persona_style=persona_style,
                 user_msg=request.message,
                 fewshot=fewshot_examples
             )
+            reply_text = llm_result["text"]
+            usage = llm_result.get("usage")
+            
+            # Update token usage if available
+            if usage:
+                _update_token_usage(usage["prompt_tokens"], usage["completion_tokens"])
+            else:
+                # Fallback token estimation
+                estimated_tokens = len(reply_text) // 4
+                _update_token_usage(estimated_tokens // 2, estimated_tokens // 2)
+            
             meta_info = {
                 "fallback": "direct_llm",
                 "used": {"facts": False, "quotes": False}
@@ -208,22 +307,32 @@ def chat(request: ChatReq, http_request: Request):
     token_count = len(reply_text.split())
     latency_ms = int((time.time() - start_time) * 1000)
     
-    # Log request/response
-    logger.info(f"Chat - Persona: {request.persona}, Tokens: {token_count}, Latency: {latency_ms}ms, Session: {session_id}")
+    # Structured logging for chat requests
+    session_snippet = session_id[:6] if session_id != "anon" else "anon"
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    with _LOCK:
+        current_usage = _USAGE.copy()
+    
+    logger.info(
+        f"CHAT endpoint=chat session={session_snippet} ip={client_ip} "
+        f"persona={request.persona} tokens_in={current_usage['tokens_in']} "
+        f"tokens_out={current_usage['tokens_out']} latency_ms={latency_ms}"
+    )
     
     return ChatResp(text=reply_text, tokens=token_count, meta=meta_info)
 
 @app.post("/roundtable", response_model=RoundtableResp)
 def roundtable(request: RoundtableReq, http_request: Request):
-    # Check rate limit
-    check_rate_limit(http_request, request.sessionId)
-    
+    # Preflight guard with comprehensive checks
+    client_id = _preflight_guard(http_request, request.sessionId)
     start_time = time.time()
+    
     personas_dir = Path(__file__).parent / "personas"
     replies = []
     
-    # Limit to first 3 personas
-    personas_to_process = request.personas[:3]
+    # Demo mode persona limit (2) or regular limit (3)
+    max_personas = 2 if PUBLIC_DEMO_MODE.lower() == "on" else 3
+    personas_to_process = request.personas[:max_personas]
     
     for persona_name in personas_to_process:
         # Validate persona name
@@ -291,6 +400,10 @@ def roundtable(request: RoundtableReq, http_request: Request):
                 reply_text = result["text"]
                 meta_info = result.get("used", {})
                 
+                # Add demo mode info to meta if applicable
+                if PUBLIC_DEMO_MODE.lower() == "on":
+                    meta_info["demomode"] = True
+                
                 replies.append(RoundtableReply(
                     persona=persona_name,
                     text=reply_text,
@@ -313,20 +426,36 @@ def roundtable(request: RoundtableReq, http_request: Request):
             fewshot_examples = persona_data.get("fewShot", None)
             
             try:
-                reply_text = llm_reply(
+                llm_result = llm_reply(
                     persona_name=actual_persona_name,
                     persona_style=persona_style,
                     user_msg=request.message,
                     fewshot=fewshot_examples
                 )
+                reply_text = llm_result["text"]
+                usage = llm_result.get("usage")
+                
+                # Update token usage if available
+                if usage:
+                    _update_token_usage(usage["prompt_tokens"], usage["completion_tokens"])
+                else:
+                    # Fallback token estimation
+                    estimated_tokens = len(reply_text) // 4
+                    _update_token_usage(estimated_tokens // 2, estimated_tokens // 2)
+                
+                meta_info = {
+                    "fallback": "direct_llm",
+                    "used": {"facts": False, "quotes": False}
+                }
+                
+                # Add demo mode info to meta if applicable
+                if PUBLIC_DEMO_MODE.lower() == "on":
+                    meta_info["demomode"] = True
                 
                 replies.append(RoundtableReply(
                     persona=persona_name,
                     text=reply_text,
-                    meta={
-                        "fallback": "direct_llm",
-                        "used": {"facts": False, "quotes": False}
-                    }
+                    meta=meta_info
                 ))
             except Exception as e:
                 logger.error(f"LLM error for persona {persona_name}: {e}")
@@ -343,14 +472,43 @@ def roundtable(request: RoundtableReq, http_request: Request):
     total_latency_ms = int((time.time() - start_time) * 1000)
     total_tokens = sum(len(reply.text.split()) for reply in replies)
     
-    # Log roundtable request/response
-    logger.info(f"Roundtable - Personas: {len(replies)}/{len(personas_to_process)}, Total Tokens: {total_tokens}, Latency: {total_latency_ms}ms")
+    # Structured logging for roundtable requests
+    session_snippet = (request.sessionId[:6] if request.sessionId else "anon") 
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    with _LOCK:
+        current_usage = _USAGE.copy()
+    
+    logger.info(
+        f"ROUNDTABLE endpoint=roundtable session={session_snippet} ip={client_ip} "
+        f"personas={len(replies)}/{len(personas_to_process)} tokens_in={current_usage['tokens_in']} "
+        f"tokens_out={current_usage['tokens_out']} latency_ms={total_latency_ms}"
+    )
     
     return RoundtableResp(replies=replies)
+
+@app.get("/diag/usage")
+def diag_usage():
+    """Usage statistics endpoint (development only)."""
+    if DISABLE_DIAG.lower() == "on":
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    with _LOCK:
+        _roll_day()
+        usage_copy = _USAGE.copy()
+    
+    return {
+        "day": usage_copy["day"],
+        "tokens_in": usage_copy["tokens_in"],
+        "tokens_out": usage_copy["tokens_out"],
+        "requests": usage_copy["requests"],
+        "cap": DAILY_TOKEN_CAP
+    }
 
 @app.get("/diag/agent")
 def diag_agent():
     """Diagnostic endpoint for agent system information."""
+    if DISABLE_DIAG.lower() == "on":
+        raise HTTPException(status_code=404, detail="Not found")
     # Get graph spec if available
     if LANGGRAPH_AVAILABLE:
         try:
@@ -388,6 +546,9 @@ def diag_agent():
 @app.get("/diag/graph.png")
 def diag_graph_png():
     """Generate and return LangGraph visualization as PNG."""
+    if DISABLE_DIAG.lower() == "on":
+        raise HTTPException(status_code=404, detail="Not found")
+    
     if not LANGGRAPH_AVAILABLE:
         raise HTTPException(
             status_code=501,
