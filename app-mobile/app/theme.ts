@@ -1,10 +1,10 @@
 export const theme = {
   colors: {
-    bg: '#ffffff',
-    card: '#f3f6ff',
+    bg: '#f0f4ff',
+    card: '#ffffff',
     text: '#0b1220',
     subtext: '#4b5563',
-    border: '#e6e9f5',
+    border: '#e0e7ff',
     accent: '#2563eb',
     accentSoft: '#dbeafe',
     success: '#16a34a',

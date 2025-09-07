@@ -91,11 +91,6 @@ export default function PersonasScreen() {
             },
           ]}
         >
-          {/* Chat bubble badge */}
-          <View style={styles.chatBubbleBadge}>
-            <Text style={styles.chatBubbleText}>💬</Text>
-          </View>
-          
           <View style={styles.cardHeader}>
             <Avatar name={item.name} size={28} />
             <Text 
@@ -210,6 +205,11 @@ const styles = StyleSheet.create({
     padding: 12,
     overflow: 'hidden',
     justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -252,19 +252,5 @@ const styles = StyleSheet.create({
     color: theme.colors.bg,
     fontSize: 11,
     fontWeight: 'bold',
-  },
-  chatBubbleBadge: {
-    position: 'absolute',
-    right: 10,
-    bottom: 10,
-    backgroundColor: theme.colors.bubble,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    zIndex: 1,
-  },
-  chatBubbleText: {
-    fontSize: 12,
-    color: 'white',
   },
 });

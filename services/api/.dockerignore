@@ -1,0 +1,15 @@
+# services/api/.dockerignore
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.env
+node_modules/
+.git/
+.gitignore
+# keep personas/ and knowledge/ (they’re needed by the API)
+app-mobile/
+tests/
+*.swp
+.DS_Store

@@ -354,6 +354,11 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     padding: theme.spacing.lg,
     marginBottom: theme.spacing.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   replyHeader: {
     flexDirection: 'row',

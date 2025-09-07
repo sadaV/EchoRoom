@@ -372,6 +372,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
     paddingTop: 50, // Account for status bar
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   personaHeaderText: {
     fontSize: 18,
@@ -438,6 +443,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.card,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   chipsContainer: {
     flexDirection: 'row',
